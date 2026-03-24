@@ -1,346 +1,214 @@
-/**
- * app/player.tsx
- * Player HLS fullscreen — TV e mobile Android
- * Usa expo-video (libreria ufficiale Expo) invece di react-native-video
- *
- * expo-video usa ExoPlayer su Android e AVPlayer su iOS nativamente,
- * senza problemi di compatibilità con compileSdk.
- */
-
-import { router, useLocalSearchParams } from 'expo-router';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  BackHandler,
-  Dimensions,
-  Platform,
-  StyleSheet,
-  Text,
-  TouchableWithoutFeedback,
-  View,
-} from 'react-native';
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
+import React, { useMemo } from 'react';
+import { StyleSheet, View, StatusBar } from 'react-native';
+import { useLocalSearchParams, Stack } from 'expo-router';
+import { WebView } from 'react-native-webview';
 
 const BASE_URL = 'http://129.153.47.200:8000';
 
-const { width } = Dimensions.get('window');
-const isTV = Platform.isTV || (width >= 1280 && !('ontouchstart' in global));
-
-// Watchdog
-const WATCHDOG_INTERVAL_MS = 1000;
-const STALL_THRESHOLD_MS   = 3000;
-const RELOAD_COOLDOWN_MS   = 8000;
-
-// Retry con backoff
-const RETRY_DELAYS = [5000, 10000, 20000, 30000];
-
-// Controlli mobile
-const CONTROLS_HIDE_DELAY = 3000;
-
-// ---------------------------------------------------------------------------
-// Componente
-// ---------------------------------------------------------------------------
-
 export default function PlayerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const playlistUrl = `${BASE_URL}/live/${id}/playlist.m3u8`;
 
-  const [buffering, setBuffering]       = useState(true);
-  const [error, setError]               = useState(false);
-  const [retryCount, setRetryCount]     = useState(0);
-  const [showControls, setShowControls] = useState(false);
-  const [sourceKey, setSourceKey]       = useState(0);
+  const injectedHTML = useMemo(() => {
+    const playlistUrl = `${BASE_URL}/live/${id}/playlist.m3u8`;
 
-  const lastTimeRef      = useRef<number>(0);
-  const lastProgressRef  = useRef<number>(Date.now());
-  const stallCountRef    = useRef<number>(0);
-  const recoveringRef    = useRef<boolean>(false);
-  const lastReloadRef    = useRef<number>(0);
-  const retryCountRef    = useRef<number>(0);
-  const watchdogRef      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const retryRef         = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    return `
+      <!DOCTYPE html>
+      <html lang="it">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.7/hls.min.js"></script>
+        <style>
+          *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+          :root { --bg:#0a0a0a; --surface:#111; --border:#1e1e1e; --accent:#e8ff47; --text:#c8c8c8; --muted:#444; --mono:'IBM Plex Mono', monospace; }
+          html, body { height:100%; background:var(--bg); color:var(--text); font-family:var(--mono); font-size:13px; line-height:1.6; overflow:hidden; }
+          .shell { display:grid; grid-template-rows:auto 1fr auto; height:100vh; max-width:1200px; margin:0 auto; padding:0 24px; }
+          header { display:flex; align-items:center; gap:16px; padding:18px 0 16px; border-bottom:1px solid var(--border); }
+          .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); transition:.3s; }
+          .dot.live { background:#ff3b3b; box-shadow:0 0 8px #ff3b3b88; animation:pulse 2s infinite; }
+          .dot.ready { background:var(--accent); box-shadow:0 0 8px var(--accent); }
+          @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.4;} }
+          .stream-id { color:var(--accent); font-weight:500; letter-spacing:.08em; }
+          .status-text { margin-left:auto; font-size:11px; color:var(--muted); }
+          .video-wrap { position:relative; display:flex; align-items:center; justify-content:center; padding:24px 0; }
+          video { width:100%; max-height:calc(100vh - 130px); aspect-ratio:16/9; background:#000; border:1px solid var(--border); }
+          .overlay { position:absolute; inset:24px 0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:#000; border:1px solid var(--border); opacity:0; pointer-events:none; transition:.3s; }
+          .overlay.visible { opacity:1; pointer-events:auto; }
+          footer { display:flex; gap:24px; padding:14px 0; border-top:1px solid var(--border); font-size:11px; color:var(--muted); }
+          .playlist-url { margin-left:auto; font-size:10px; color:#2a2a2a; max-width:420px; overflow:hidden; text-overflow:ellipsis; }
+        </style>
+      </head>
+      <body>
+        <div class="shell">
+          <header>
+            <div class="dot" id="dot"></div>
+            <span class="stream-id">${id}</span>
+            <span class="status-text" id="statusText">init…</span>
+          </header>
+          <div class="video-wrap">
+            <video id="video" controls playsinline></video>
+            <div class="overlay" id="overlay"><div id="overlayMsg">loading…</div></div>
+          </div>
+          <footer>
+            <span>HLS.js \${Hls.version}</span>
+            <span id="latency"></span>
+            <span class="playlist-url">${playlistUrl}</span>
+          </footer>
+        </div>
 
-  // -------------------------------------------------------------------------
-  // expo-video player
-  // -------------------------------------------------------------------------
-  const player = useVideoPlayer(
-  {
-    uri: playlistUrl.trim(), 
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-      'Connection': 'keep-alive',
-      // Se lo stream richiede un sito specifico per funzionare, aggiungilo qui sotto:
-      // 'Referer': 'https://sito-dello-stream.com/', 
-    },
-  },
-  (p) => {
-    p.play();
-  }
-);
+        <script>
+          const video = document.getElementById("video");
+          const dot = document.getElementById("dot");
+          const statusText = document.getElementById("statusText");
+          const overlay = document.getElementById("overlay");
+          const overlayMsg = document.getElementById("overlayMsg");
+          const latencyEl = document.getElementById("latency");
+          const playlistUrl = "${playlistUrl}";
 
-  // -------------------------------------------------------------------------
-  // Tasto Back
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      router.back();
-      return true;
-    });
-    return () => sub.remove();
-  }, []);
+          function setStatus(state, msg) {
+            statusText.textContent = msg;
+            dot.className = "dot";
+            overlay.classList.remove("visible");
+            if (state === "live") dot.classList.add("live");
+            if (state === "ready") dot.classList.add("ready");
+            if (state === "error" || state === "wait") overlay.classList.add("visible");
+          }
 
-  // -------------------------------------------------------------------------
-  // Ascolta eventi del player
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    const statusSub = player.addListener('statusChange', (status) => {
-      console.log('[Player] Status:', status.status);
+          if (Hls.isSupported()) {
+            const hls = new Hls({
+              // --- TUTTI I TUOI PARAMETRI ORIGINALI ---
+              lowLatencyMode: false,
+              backBufferLength: 30,
+              maxBufferLength: 60,
+              maxMaxBufferLength: 120,
+              maxBufferSize: 80*1000*1000,
+              maxBufferHole: 5.0,
+              liveSyncDurationCount: 8,
+              liveMaxLatencyDurationCount: 15,
+              fragLoadingMaxRetry: 12,
+              fragLoadingRetryDelay: 500,
+              fragLoadingMaxRetryTimeout: 10000,
+              manifestLoadingMaxRetry: 10,
+              manifestLoadingRetryDelay: 800,
+              manifestLoadingMaxRetryTimeout: 8000,
+              startFragPrefetch: true,
+              enableWorker: true,
+              liveDurationInfinity: true,
+              nudgeMaxRetry: 15,
+              nudgeOffset: 1.0,
+            });
 
-      if (status.status === 'readyToPlay') {
-        setBuffering(false);
-        setError(false);
-        retryCountRef.current   = 0;
-        setRetryCount(0);
-        stallCountRef.current   = 0;
-        recoveringRef.current   = false;
-        lastProgressRef.current = Date.now();
-      }
+            hls.loadSource(playlistUrl);
+            hls.attachMedia(video);
 
-      if (status.status === 'loading') {
-        setBuffering(true);
-      }
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+              setStatus("ready", "buffering…");
+              video.play().catch(() => {});
+            });
 
-      if (status.status === 'error') {
-        console.error('[Player] Errore:', status.error);
-        setError(true);
-        setBuffering(false);
-        scheduleRetry();
-      }
-    });
+            hls.on(Hls.Events.FRAG_CHANGED, () => setStatus("live", "live"));
 
-    const playingSub = player.addListener('playingChange', (isPlaying) => {
-      if (isPlaying) {
-        setBuffering(false);
-        recoveringRef.current   = false;
-        stallCountRef.current   = 0;
-        lastProgressRef.current = Date.now();
-      }
-    });
+            // --- TUA LOGICA WATCHDOG (LIV 1 E 2) ---
+            let lastTime = 0, stallCount = 0, lastProgressTs = Date.now(), recovering = false;
 
-    return () => {
-      statusSub.remove();
-      playingSub.remove();
-    };
-  }, [player]);
+            function recover() {
+              if (recovering) return;
+              recovering = true; stallCount++;
+              if (stallCount <= 2) {
+                if (hls.liveSyncPosition) { video.currentTime = hls.liveSyncPosition; }
+                else { video.currentTime += 2.0; }
+                setTimeout(() => { recovering = false; }, 2000);
+              } else if (stallCount === 3) {
+                hls.recoverMediaError();
+                setTimeout(() => { recovering = false; }, 3000);
+              } else {
+                hls.stopLoad(); hls.startLoad(-1);
+                stallCount = 0; lastProgressTs = Date.now(); recovering = false;
+              }
+            }
 
-  // -------------------------------------------------------------------------
-  // Retry con backoff
-  // -------------------------------------------------------------------------
-  const scheduleRetry = useCallback(() => {
-    if (retryRef.current) clearTimeout(retryRef.current);
+            video.addEventListener("waiting", () => {
+              setStatus("ready", "buffering…");
+              setTimeout(() => {
+                if (!video.paused && video.currentTime === lastTime) recover();
+              }, 2000);
+            });
 
-    const count = retryCountRef.current;
-    const delay = RETRY_DELAYS[Math.min(count, RETRY_DELAYS.length - 1)];
-    retryCountRef.current += 1;
-    setRetryCount(retryCountRef.current);
+            video.addEventListener("playing", () => {
+              recovering = false; stallCount = 0; lastProgressTs = Date.now();
+              setStatus("live", "live");
+            });
 
-    console.warn(`[Player] Retry ${count + 1} tra ${delay / 1000}s`);
+            setInterval(() => {
+              if (!video || video.paused) return;
+              if (video.currentTime !== lastTime) {
+                lastTime = video.currentTime; lastProgressTs = Date.now();
+                stallCount = 0; recovering = false;
+              } else if (Date.now() - lastProgressTs > 2000) {
+                recover();
+              }
+            }, 500);
 
-    retryRef.current = setTimeout(() => {
-      setSourceKey(k => k + 1);
-      setError(false);
-      setBuffering(true);
-      stallCountRef.current   = 0;
-      recoveringRef.current   = false;
-      lastProgressRef.current = Date.now();
-    }, delay);
-  }, []);
+            // Visibility Re-init
+            document.addEventListener("visibilitychange", () => {
+              if (document.visibilityState === "visible") {
+                hls.stopLoad(); hls.detachMedia();
+                lastTime = 0; stallCount = 0; recovering = false; lastProgressTs = Date.now();
+                hls.attachMedia(video); hls.startLoad(-1);
+                video.play().catch(() => {});
+                setStatus("ready", "buffering…");
+              }
+            });
 
-  // -------------------------------------------------------------------------
-  // Reload player (quando sourceKey cambia)
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    player.replace({ uri: playlistUrl });
-    player.play();
-  }, [sourceKey]);
+            // Latency Monitor
+            setInterval(() => {
+              if (hls.latency) { latencyEl.textContent = "latency " + hls.latency.toFixed(1) + "s"; }
+            }, 2000);
 
-  // -------------------------------------------------------------------------
-  // Recover scalato
-  // -------------------------------------------------------------------------
-  const recover = useCallback(() => {
-    if (recoveringRef.current || error) return;
-    recoveringRef.current = true;
+            hls.on(Hls.Events.ERROR, (_, data) => {
+              if (data.fatal) {
+                overlayMsg.innerHTML = "errore " + data.type;
+                setStatus("error", "errore");
+                setTimeout(() => { window.location.reload(); }, 5000);
+              }
+            });
+            setStatus("wait", "loading…");
+          } else {
+            video.src = playlistUrl;
+            video.play().catch(() => {});
+            setStatus("live", "live (nativo)");
+          }
+        </script>
+      </body>
+      </html>
+    `;
+  }, [id]);
 
-    stallCountRef.current++;
-    const count = stallCountRef.current;
-    console.warn(`[Watchdog] STALL ${count}`);
-
-    // Interventi 1-2: seek al live edge
-    if (count <= 2) {
-      console.warn('[Watchdog] Seek live edge');
-      try {
-        player.seekBy(999999);
-      } catch (e) {
-        console.warn('[Watchdog] Seek fallito, retry source');
-      }
-      setTimeout(() => { recoveringRef.current = false; }, 2000);
-      return;
-    }
-
-    // Intervento 3+: reload source
-    console.warn('[Watchdog] Reload source');
-    const now = Date.now();
-    if (now - lastReloadRef.current > RELOAD_COOLDOWN_MS) {
-      lastReloadRef.current = now;
-      setSourceKey(k => k + 1);
-      stallCountRef.current   = 0;
-      lastProgressRef.current = now;
-    }
-    recoveringRef.current = false;
-  }, [player, error]);
-
-  // -------------------------------------------------------------------------
-  // Watchdog basato su currentTime del player
-  // -------------------------------------------------------------------------
-  useEffect(() => {
-    watchdogRef.current = setInterval(() => {
-      if (error || !player) return;
-
-      const currentTime = player.currentTime;
-
-      if (currentTime !== lastTimeRef.current) {
-        lastTimeRef.current     = currentTime;
-        lastProgressRef.current = Date.now();
-        stallCountRef.current   = 0;
-        recoveringRef.current   = false;
-        if (buffering) setBuffering(false);
-        return;
-      }
-
-      const elapsed = Date.now() - lastProgressRef.current;
-      if (elapsed > STALL_THRESHOLD_MS && player.playing) {
-        recover();
-      }
-    }, WATCHDOG_INTERVAL_MS);
-
-    return () => {
-      if (watchdogRef.current)      clearInterval(watchdogRef.current);
-      if (retryRef.current)         clearTimeout(retryRef.current);
-      if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
-    };
-  }, [recover, error, buffering, player]);
-
-  // -------------------------------------------------------------------------
-  // Controlli mobile
-  // -------------------------------------------------------------------------
-  function handleTap() {
-    if (isTV) return;
-    setShowControls(v => !v);
-    if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
-    controlsTimerRef.current = setTimeout(() => {
-      setShowControls(false);
-    }, CONTROLS_HIDE_DELAY);
-  }
-
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
   return (
-    <TouchableWithoutFeedback onPress={handleTap}>
-      <View style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar hidden />
+      <Stack.Screen options={{ headerShown: false }} />
 
-        <VideoView
-          player={player}
-          style={styles.video}
-          contentFit="contain"
-          nativeControls={!isTV && showControls}
-          allowsFullscreen={false}
-          allowsPictureInPicture={false}
-        />
-
-        {/* Overlay buffering */}
-        {buffering && !error && (
-          <View style={styles.overlay}>
-            <ActivityIndicator color="#e8ff47" size="large" />
-            <Text style={styles.overlayText}>buffering…</Text>
-          </View>
-        )}
-
-        {/* Overlay errore */}
-        {error && (
-          <View style={styles.overlay}>
-            <Text style={styles.overlayTextError}>✕</Text>
-            <Text style={styles.overlayText}>
-              errore — retry {retryCount} in corso…
-            </Text>
-            <Text style={styles.overlayUrl}>{playlistUrl}</Text>
-          </View>
-        )}
-
-        {/* HUD info */}
-        <View style={styles.hud}>
-          <Text style={styles.hudText}>{id}</Text>
-        </View>
-
-      </View>
-    </TouchableWithoutFeedback>
+      <WebView
+        originWhitelist={['*']}
+        source={{ html: injectedHTML }}
+        style={styles.webview}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        allowsInlineMediaPlayback={true}
+        mediaPlaybackRequiresUserAction={false}
+        mixedContentMode="always"
+        allowsFullscreenVideo={true}
+        // User Agent da browser desktop per sicurezza extra
+        userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+      />
+    </View>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Stili
-// ---------------------------------------------------------------------------
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  video: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    padding: 24,
-  },
-  overlayText: {
-    color: '#444',
-    fontFamily: 'monospace',
-    fontSize: 13,
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  overlayTextError: {
-    color: '#ff3b3b',
-    fontSize: 32,
-  },
-  overlayUrl: {
-    color: '#2a2a2a',
-    fontFamily: 'monospace',
-    fontSize: 10,
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  hud: {
-    position: 'absolute',
-    bottom: 16,
-    left: 20,
-    opacity: 0.4,
-  },
-  hudText: {
-    color: '#c8c8c8',
-    fontFamily: 'monospace',
-    fontSize: 11,
-    letterSpacing: 1,
-  },
+  container: { flex: 1, backgroundColor: '#000' },
+  webview: { flex: 1, backgroundColor: '#000' },
 });
