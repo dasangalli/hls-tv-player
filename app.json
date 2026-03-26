@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "HLS Player",
-    "slug": "hls-tv-player",
+    "slug": "hls-player",
     "version": "1.0.0",
     "orientation": "landscape",
     "userInterfaceStyle": "dark",
