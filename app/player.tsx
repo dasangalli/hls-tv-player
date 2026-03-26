@@ -3,8 +3,6 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  BackHandler,
-  Dimensions,
   Platform,
   StyleSheet,
   Text,
@@ -12,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { useSafeTVEventHandler } from '../hooks/useSafeTVEventHandler';
-
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { useKeepAwake } from 'expo-keep-awake';
 import { Ionicons } from '@expo/vector-icons';
@@ -39,11 +36,8 @@ export default function PlayerScreen() {
   const lastReloadRef = useRef<number>(0);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // --- FIX 1: ORIENTAMENTO SICURO ---
   useEffect(() => {
     async function initOrientation() {
-      // Su TV non forziamo Landscape perché è già nativo (evita crash)
-      // Su Mobile invece lo forziamo
       if (!isTV) {
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
       }
@@ -54,7 +48,7 @@ export default function PlayerScreen() {
     };
   }, []);
 
-  const player = useVideoPlayer({ 
+  const player = useVideoPlayer({
     uri: playlistUrl,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -63,11 +57,10 @@ export default function PlayerScreen() {
     p.play();
   });
 
-  // --- FIX 2: GESTIONE ERRORI NATIVI ---
   useEffect(() => {
     const statusSub = player.addListener('statusChange', (status) => {
       if (status.status === 'error') {
-        console.warn("Errore player nativo, forzo ricaricamento...");
+        console.warn('Errore player nativo, forzo ricaricamento...');
         setSourceKey(k => k + 1);
       }
     });
@@ -129,7 +122,7 @@ export default function PlayerScreen() {
   }, [player, recover, buffering]);
 
   useEffect(() => {
-    player.replace({ 
+    player.replace({
       uri: playlistUrl,
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' }
     });
@@ -145,26 +138,23 @@ export default function PlayerScreen() {
         contentFit="contain"
         nativeControls={false}
       />
-
       {(showControls || isTV) && (
-        <TouchableOpacity 
+        <TouchableOpacity
           focusable={true}
-          hasTVPreferredFocus={false} // Evita che il focus "rubi" l'attenzione al video all'avvio
-          style={styles.backButton} 
+          hasTVPreferredFocus={false}
+          style={styles.backButton}
           onPress={() => router.back()}
         >
           <Ionicons name="arrow-back" size={24} color="#e8ff47" />
           <Text style={styles.backText}>TORNA ALLA LISTA</Text>
         </TouchableOpacity>
       )}
-
       {buffering && (
         <View style={styles.overlay}>
           <ActivityIndicator color="#e8ff47" size="large" />
           <Text style={styles.overlayText}>BUFFERING...</Text>
         </View>
       )}
-
       {showControls && (
         <View style={styles.hud}>
           <Text style={styles.hudText}>CANALE: {id}</Text>
@@ -206,5 +196,5 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 5,
   },
-  hudText: { color: '#fff', fontFamily: 'monospace' }
+  hudText: { color: '#fff', fontFamily: 'monospace' },
 });
