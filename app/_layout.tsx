@@ -1,10 +1,12 @@
 import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
-export default function Layout() {
+export default function RootLayout() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="player" />
-    </Stack>
+    <ErrorBoundary>
+      <StatusBar hidden />
+      <Stack screenOptions={{ headerShown: false }} />
+    </ErrorBoundary>
   );
 }
