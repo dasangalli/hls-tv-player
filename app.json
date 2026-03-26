@@ -14,8 +14,7 @@
     "android": {
       "package": "com.hlsplayer.app",
       "versionCode": 1,
-      "usesCleartextTraffic": true,
-      "banner": "./assets/banner.png", 
+      "usesCleartextTraffic": true, 
       "softwareKeyboardLayoutMode": "pan", 
       "intentFilters": [
         {
