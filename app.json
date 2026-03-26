@@ -15,18 +15,16 @@
       "package": "com.hlsplayer.app",
       "versionCode": 1,
       "usesCleartextTraffic": true,
+      "banner": "./assets/banner.png", 
+      "softwareKeyboardLayoutMode": "pan", 
       "intentFilters": [
         {
           "action": "android.intent.action.MAIN",
-          "category": [
-            "android.intent.category.LAUNCHER"
-          ]
+          "category": ["android.intent.category.LAUNCHER"]
         },
         {
           "action": "android.intent.action.MAIN",
-          "category": [
-            "android.intent.category.LEANBACK_LAUNCHER"
-          ]
+          "category": ["android.intent.category.LEANBACK_LAUNCHER"]
         }
       ]
     },
@@ -48,7 +46,8 @@
             "usesCleartextTraffic": true
           }
         }
-      ]
+      ],
+      "expo-screen-orientation" 
     ]
   }
 }
