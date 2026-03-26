@@ -12,18 +12,20 @@ import { useRouter } from 'expo-router';
 
 export default function HomeScreen() {
   const [id, setId] = useState('');
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [isButtonFocused, setIsButtonFocused] = useState(false);
   const router = useRouter();
 
-  // Gestore per i tasti fisici del telecomando (0-9 e Back)
+  // Gestore per i tasti fisici del telecomando (numeri 0-9)
   useTVEventHandler((evt) => {
     if (!evt) return;
     
-    // Se l'utente preme i tasti numerici fisici sul telecomando
+    // Se l'utente preme i tasti numerici fisici sul telecomando (se presenti)
     if (['0','1','2','3','4','5','6','7','8','9'].includes(evt.eventType)) {
       setId((prev) => prev + evt.eventType);
     }
     
-    // Se preme il tasto "Cancella" o simile (opzionale)
+    // Reset veloce tenendo premuto OK (opzionale)
     if (evt.eventType === 'longSelect') {
       setId('');
     }
@@ -42,33 +44,51 @@ export default function HomeScreen() {
       <Text style={styles.label}>INSERISCI ID STREAM:</Text>
       
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input, 
+          isInputFocused && styles.inputFocused // Applica stile focus
+        ]}
         value={id}
         onChangeText={setId}
         placeholder="Es: 2"
         placeholderTextColor="#444"
-        keyboardType="numeric" // Apre il tastierino numerico su TV
+        keyboardType="numeric"
         
-        // --- PROPRIETÀ TV ---
+        // --- CONFIGURAZIONE TV ---
         focusable={true} 
-        hasTVPreferredFocus={true} // Il cursore parte da qui
+        hasTVPreferredFocus={true} // Il cursore parte da qui all'avvio
+        onFocus={() => setIsInputFocused(true)}
+        onBlur={() => setIsInputFocused(false)}
         nextFocusDown={1} // ID del prossimo elemento (il tasto avvia)
       />
 
       <TouchableOpacity 
-        style={styles.button}
+        nativeID="1" // Collegato al nextFocusDown dell'input
+        style={[
+          styles.button, 
+          isButtonFocused && styles.buttonFocused // Applica stile focus
+        ]}
         onPress={handleStart}
-        activeOpacity={0.7}
+        activeOpacity={0.8}
         
-        // --- PROPRIETÀ TV ---
+        // --- CONFIGURAZIONE TV ---
         focusable={true}
-        nativeID="1" // Collegato al nextFocusDown del TextInput
+        onFocus={() => setIsButtonFocused(true)}
+        onBlur={() => setIsButtonFocused(false)}
       >
-        <Text style={styles.buttonText}>AVVIA STREAM</Text>
+        <Text style={[
+          styles.buttonText,
+          isButtonFocused && { color: '#000' } // Testo nero su fondo chiaro quando focus
+        ]}>
+          AVVIA STREAM
+        </Text>
       </TouchableOpacity>
 
       {Platform.isTV && (
-        <Text style={styles.tip}>Usa le frecce per navigare, OK per confermare</Text>
+        <View style={styles.tipContainer}>
+          <Text style={styles.tip}>Usa le frecce per navigare • OK per confermare</Text>
+          <Text style={styles.tip}>Puoi anche usare i tasti numerici del telecomando</Text>
+        </View>
       )}
     </View>
   );
@@ -84,50 +104,70 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#e8ff47',
-    fontSize: 32,
+    fontSize: 42,
     fontFamily: 'monospace',
-    marginBottom: 40,
+    marginBottom: 50,
     fontWeight: 'bold',
+    letterSpacing: 2,
   },
   label: {
-    color: '#c8c8c8',
+    color: '#888',
     fontFamily: 'monospace',
-    marginBottom: 10,
+    marginBottom: 15,
     fontSize: 14,
+    textTransform: 'uppercase',
   },
   input: {
-    width: '80%',
-    maxWidth: 400,
+    width: '60%',
+    maxWidth: 500,
     backgroundColor: '#111',
     borderWidth: 2,
-    borderColor: '#1e1e1e',
-    borderRadius: 8,
-    padding: 15,
+    borderColor: '#222',
+    borderRadius: 12,
+    padding: 20,
     color: '#fff',
-    fontSize: 24,
+    fontSize: 28,
     textAlign: 'center',
     fontFamily: 'monospace',
-    marginBottom: 20,
-    // Effetto focus per Android TV (gestito dal sistema o personalizzabile)
+    marginBottom: 25,
+  },
+  inputFocused: {
+    borderColor: '#e8ff47', // Bordo giallo limone
+    backgroundColor: '#1a1a1a',
+    shadowColor: '#e8ff47',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
   },
   button: {
-    width: '80%',
-    maxWidth: 400,
-    backgroundColor: '#e8ff47',
-    padding: 18,
-    borderRadius: 8,
+    width: '60%',
+    maxWidth: 500,
+    backgroundColor: '#1e1e1e',
+    padding: 20,
+    borderRadius: 12,
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  buttonFocused: {
+    backgroundColor: '#e8ff47', // Diventa giallo pieno
+    transform: [{ scale: 1.05 }], // Si ingrandisce leggermente (effetto tipico TV)
+    borderColor: '#fff',
   },
   buttonText: {
-    color: '#000',
+    color: '#e8ff47',
     fontWeight: 'bold',
-    fontSize: 16,
+    fontSize: 18,
     letterSpacing: 1,
+  },
+  tipContainer: {
+    marginTop: 40,
+    alignItems: 'center',
   },
   tip: {
     color: '#444',
     fontSize: 12,
-    marginTop: 30,
     fontFamily: 'monospace',
+    marginTop: 5,
   }
 });
