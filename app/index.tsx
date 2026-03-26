@@ -1,123 +1,76 @@
-/**
- * app/index.tsx
- * Schermata inserimento Stream ID
- * Si adatta automaticamente a TV e mobile
- */
-
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
-import {
-  Animated,
-  Dimensions,
-  KeyboardAvoidingView,
+import React, { useState } from 'react';
+import { 
+  StyleSheet, 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
   Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+  useTVEventHandler 
 } from 'react-native';
-
-const BASE_URL    = 'http://129.153.47.200:8000';
-const STORAGE_KEY = 'last_stream_id';
-
-// Rileva TV: schermo largo + nessun touch
-const { width } = Dimensions.get('window');
-const isTV = Platform.isTV || (width >= 1280 && !('ontouchstart' in global));
+import { useRouter } from 'expo-router';
 
 export default function HomeScreen() {
-  const [streamId, setStreamId] = useState('');
-  const [error, setError]       = useState('');
-  const inputRef                = useRef<TextInput>(null);
-  const dotAnim                 = useRef(new Animated.Value(1)).current;
+  const [id, setId] = useState('');
+  const router = useRouter();
 
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(dotAnim, { toValue: 0.3, duration: 900, useNativeDriver: true }),
-        Animated.timing(dotAnim, { toValue: 1,   duration: 900, useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [dotAnim]);
-
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then(val => {
-      if (val) setStreamId(val);
-    });
-    setTimeout(() => inputRef.current?.focus(), 300);
-  }, []);
-
-  async function handleStart() {
-    const id = streamId.trim();
-    if (!id) {
-      setError('inserisci uno stream id');
-      return;
+  // Gestore per i tasti fisici del telecomando (0-9 e Back)
+  useTVEventHandler((evt) => {
+    if (!evt) return;
+    
+    // Se l'utente preme i tasti numerici fisici sul telecomando
+    if (['0','1','2','3','4','5','6','7','8','9'].includes(evt.eventType)) {
+      setId((prev) => prev + evt.eventType);
     }
-    setError('');
-    await AsyncStorage.setItem(STORAGE_KEY, id);
-    router.push(`/player?id=${id}`);
-  }
+    
+    // Se preme il tasto "Cancella" o simile (opzionale)
+    if (evt.eventType === 'longSelect') {
+      setId('');
+    }
+  });
+
+  const handleStart = () => {
+    if (id.trim()) {
+      router.push({ pathname: '/player', params: { id: id.trim() } });
+    }
+  };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
+    <View style={styles.container}>
+      <Text style={styles.title}>HLS TV PLAYER</Text>
+      
+      <Text style={styles.label}>INSERISCI ID STREAM:</Text>
+      
+      <TextInput
+        style={styles.input}
+        value={id}
+        onChangeText={setId}
+        placeholder="Es: 2"
+        placeholderTextColor="#444"
+        keyboardType="numeric" // Apre il tastierino numerico su TV
+        
+        // --- PROPRIETÀ TV ---
+        focusable={true} 
+        hasTVPreferredFocus={true} // Il cursore parte da qui
+        nextFocusDown={1} // ID del prossimo elemento (il tasto avvia)
+      />
+
+      <TouchableOpacity 
+        style={styles.button}
+        onPress={handleStart}
+        activeOpacity={0.7}
+        
+        // --- PROPRIETÀ TV ---
+        focusable={true}
+        nativeID="1" // Collegato al nextFocusDown del TextInput
       >
-        <View style={[styles.card, isTV && styles.cardTV]}>
+        <Text style={styles.buttonText}>AVVIA STREAM</Text>
+      </TouchableOpacity>
 
-          {/* Logo */}
-          <View style={styles.logoRow}>
-            <Animated.View style={[styles.dot, { opacity: dotAnim }]} />
-            <Text style={[styles.logo, isTV && styles.logoTV]}>HLS PLAYER</Text>
-          </View>
-
-          {/* Label */}
-          <Text style={styles.label}>stream id</Text>
-
-          {/* Input */}
-          <TextInput
-            ref={inputRef}
-            style={[styles.input, isTV && styles.inputTV]}
-            value={streamId}
-            onChangeText={text => { setStreamId(text); setError(''); }}
-            onSubmitEditing={handleStart}
-            placeholder="es. 1"
-            placeholderTextColor="#2a2a2a"
-            keyboardType="default"
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="go"
-            selectTextOnFocus
-          />
-
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-
-          {/* Pulsante */}
-          <Pressable
-            style={({ focused, pressed }) => [
-              styles.btn,
-              isTV && styles.btnTV,
-              (focused || pressed) && styles.btnActive,
-            ]}
-            onPress={handleStart}
-          >
-            <Text style={[styles.btnText, isTV && styles.btnTextTV]}>▶  avvia</Text>
-          </Pressable>
-
-          {/* URL base */}
-          <Text style={styles.baseUrl}>{BASE_URL}</Text>
-
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      {Platform.isTV && (
+        <Text style={styles.tip}>Usa le frecce per navigare, OK per confermare</Text>
+      )}
+    </View>
   );
 }
 
@@ -125,122 +78,56 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0a0a0a',
-  },
-  scroll: {
-    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: 20,
   },
-
-  // Card
-  card: {
-    width: '100%',
-    maxWidth: 420,
-    padding: 28,
-    backgroundColor: '#111',
-    borderWidth: 1,
-    borderColor: '#1e1e1e',
-  },
-  cardTV: {
-    width: 500,
-    padding: 44,
-  },
-
-  // Logo
-  logoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 32,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ff3b3b',
-    shadowColor: '#ff3b3b',
-    shadowOpacity: 0.6,
-    shadowRadius: 6,
-  },
-  logo: {
+  title: {
     color: '#e8ff47',
+    fontSize: 32,
     fontFamily: 'monospace',
-    fontWeight: '500',
-    fontSize: 13,
-    letterSpacing: 3,
+    marginBottom: 40,
+    fontWeight: 'bold',
   },
-  logoTV: {
-    fontSize: 16,
-  },
-
-  // Label
   label: {
-    color: '#444',
+    color: '#c8c8c8',
     fontFamily: 'monospace',
-    fontSize: 10,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginBottom: 8,
+    marginBottom: 10,
+    fontSize: 14,
   },
-
-  // Input
   input: {
-    backgroundColor: '#0a0a0a',
-    borderWidth: 1,
+    width: '80%',
+    maxWidth: 400,
+    backgroundColor: '#111',
+    borderWidth: 2,
     borderColor: '#1e1e1e',
-    color: '#c8c8c8',
-    fontFamily: 'monospace',
-    fontSize: 20,
-    padding: 12,
-    marginBottom: 8,
-    letterSpacing: 3,
-  },
-  inputTV: {
-    fontSize: 26,
-    padding: 16,
-    letterSpacing: 5,
-  },
-
-  // Errore
-  error: {
-    color: '#ff3b3b',
-    fontFamily: 'monospace',
-    fontSize: 11,
-    marginBottom: 8,
-  },
-
-  // Pulsante
-  btn: {
-    borderWidth: 1,
-    borderColor: '#1e1e1e',
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  btnTV: {
-    padding: 16,
-    marginTop: 20,
-  },
-  btnActive: {
-    borderColor: '#e8ff47',
-  },
-  btnText: {
-    color: '#c8c8c8',
-    fontFamily: 'monospace',
-    fontSize: 13,
-    letterSpacing: 2,
-  },
-  btnTextTV: {
-    fontSize: 15,
-  },
-
-  // URL base
-  baseUrl: {
-    color: '#2a2a2a',
-    fontFamily: 'monospace',
-    fontSize: 10,
+    borderRadius: 8,
+    padding: 15,
+    color: '#fff',
+    fontSize: 24,
     textAlign: 'center',
+    fontFamily: 'monospace',
+    marginBottom: 20,
+    // Effetto focus per Android TV (gestito dal sistema o personalizzabile)
   },
+  button: {
+    width: '80%',
+    maxWidth: 400,
+    backgroundColor: '#e8ff47',
+    padding: 18,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#000',
+    fontWeight: 'bold',
+    fontSize: 16,
+    letterSpacing: 1,
+  },
+  tip: {
+    color: '#444',
+    fontSize: 12,
+    marginTop: 30,
+    fontFamily: 'monospace',
+  }
 });
