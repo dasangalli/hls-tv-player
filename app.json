@@ -3,13 +3,11 @@
     "name": "HLS Player",
     "slug": "hls-tv-player",
     "version": "1.0.0",
-    "orientation": "landscape",
+    "orientation": "landscape", 
     "userInterfaceStyle": "dark",
     "scheme": "hlsplayer",
     "extra": {
-      "eas": {
-        "projectId": "8d2cc8de-01f7-490c-98e0-707709cbdb79"
-      }
+      "eas": { "projectId": "8d2cc8de-01f7-490c-98e0-707709cbdb79" }
     },
     "android": {
       "package": "com.hlsplayer.app",
@@ -22,8 +20,7 @@
           "category": ["android.intent.category.LAUNCHER"]
         },
         {
-          "action": "android.intent.action.MAIN",
-          "category": ["android.intent.category.LEANBACK_LAUNCHER"]
+          "action": "android.intent.category.LEANBACK_LAUNCHER"
         }
       ]
     },
