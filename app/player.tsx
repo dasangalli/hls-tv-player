@@ -17,19 +17,15 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { useKeepAwake } from 'expo-keep-awake';
 import { Ionicons } from '@expo/vector-icons';
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
 const BASE_URL = 'http://129.153.47.200:8000';
-const { width } = Dimensions.get('window');
-const isTV = Platform.isTV || (width >= 1280 && !('ontouchstart' in global));
+const isTV = Platform.isTV;
 
 const WATCHDOG_INTERVAL_MS = 1000;
 const STALL_THRESHOLD_MS   = 3000;
 const RELOAD_COOLDOWN_MS   = 8000;
 
 export default function PlayerScreen() {
-  useKeepAwake(); // Impedisce alla TV di andare in standby
+  useKeepAwake();
   const { id } = useLocalSearchParams<{ id: string }>();
   const playlistUrl = `${BASE_URL}/live/${id}/playlist.m3u8`;
 
@@ -43,7 +39,21 @@ export default function PlayerScreen() {
   const lastReloadRef = useRef<number>(0);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 1. Inizializzazione Player con User-Agent (per evitare buffering Nginx)
+  // --- FIX 1: ORIENTAMENTO SICURO ---
+  useEffect(() => {
+    async function initOrientation() {
+      // Su TV non forziamo Landscape perché è già nativo (evita crash)
+      // Su Mobile invece lo forziamo
+      if (!isTV) {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      }
+    }
+    initOrientation();
+    return () => {
+      if (!isTV) ScreenOrientation.unlockAsync();
+    };
+  }, []);
+
   const player = useVideoPlayer({ 
     uri: playlistUrl,
     headers: {
@@ -53,20 +63,26 @@ export default function PlayerScreen() {
     p.play();
   });
 
-  // 2. Gestione Telecomando
+  // --- FIX 2: GESTIONE ERRORI NATIVI ---
+  useEffect(() => {
+    const statusSub = player.addListener('statusChange', (status) => {
+      if (status.status === 'error') {
+        console.warn("Errore player nativo, forzo ricaricamento...");
+        setSourceKey(k => k + 1);
+      }
+    });
+    return () => statusSub.remove();
+  }, [player]);
+
   useTVEventHandler((evt) => {
     if (!evt) return;
-    
-    // Mostra info se l'utente tocca un tasto qualsiasi
     if (['up', 'down', 'left', 'right', 'select'].includes(evt.eventType)) {
       triggerControls();
     }
-
     if (evt.eventType === 'playPause' || (evt.eventType === 'select' && !showControls)) {
       if (player.playing) player.pause();
       else player.play();
     }
-
     if (evt.eventType === 'back') {
       router.back();
     }
@@ -77,20 +93,17 @@ export default function PlayerScreen() {
     setTimeout(() => setShowControls(false), 3500);
   };
 
-  // 3. Watchdog per recupero stalli (Cruciale per il tuo server)
   const recover = useCallback(() => {
     stallCountRef.current++;
     const count = stallCountRef.current;
-    
     if (count <= 2) {
-      try { player.seekBy(10); } catch (e) {} // Prova a saltare il "buco" nel buffer
+      try { player.seekBy(10); } catch (e) {}
       return;
     }
-
     const now = Date.now();
     if (now - lastReloadRef.current > RELOAD_COOLDOWN_MS) {
       lastReloadRef.current = now;
-      setSourceKey(k => k + 1); // Forza il ricaricamento totale
+      setSourceKey(k => k + 1);
       stallCountRef.current = 0;
     }
   }, [player]);
@@ -98,7 +111,6 @@ export default function PlayerScreen() {
   useEffect(() => {
     watchdogRef.current = setInterval(() => {
       if (!player || !player.playing) return;
-
       if (player.currentTime !== lastTimeRef.current) {
         lastTimeRef.current = player.currentTime;
         lastProgressRef.current = Date.now();
@@ -111,17 +123,15 @@ export default function PlayerScreen() {
         }
       }
     }, WATCHDOG_INTERVAL_MS);
-
     return () => {
       if (watchdogRef.current) clearInterval(watchdogRef.current);
     };
   }, [player, recover, buffering]);
 
-  // Ricarica quando il watchdog lo richiede
   useEffect(() => {
     player.replace({ 
       uri: playlistUrl,
-      headers: { 'User-Agent': 'Mozilla/5.0 Chrome/122.0.0.0' }
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' }
     });
     player.play();
   }, [sourceKey]);
@@ -129,7 +139,6 @@ export default function PlayerScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      
       <VideoView
         player={player}
         style={styles.video}
@@ -137,10 +146,10 @@ export default function PlayerScreen() {
         nativeControls={false}
       />
 
-      {/* Tasto Back (Focalizzabile per telecomando) */}
       {(showControls || isTV) && (
         <TouchableOpacity 
           focusable={true}
+          hasTVPreferredFocus={false} // Evita che il focus "rubi" l'attenzione al video all'avvio
           style={styles.backButton} 
           onPress={() => router.back()}
         >
@@ -186,6 +195,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e8ff47',
+    zIndex: 10,
   },
   backText: { color: '#e8ff47', marginLeft: 10, fontWeight: 'bold' },
   hud: {
