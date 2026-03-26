@@ -3,7 +3,7 @@
     "name": "HLS Player",
     "slug": "hls-tv-player",
     "version": "1.0.0",
-    "orientation": "default",
+    "orientation": "landscape",
     "userInterfaceStyle": "dark",
     "scheme": "hlsplayer",
     "extra": {
@@ -14,8 +14,8 @@
     "android": {
       "package": "com.hlsplayer.app",
       "versionCode": 1,
-      "usesCleartextTraffic": true, 
-      "softwareKeyboardLayoutMode": "pan", 
+      "usesCleartextTraffic": true,
+      "softwareKeyboardLayoutMode": "pan",
       "intentFilters": [
         {
           "action": "android.intent.action.MAIN",
@@ -28,13 +28,10 @@
       ]
     },
     "plugins": [
-      [
-        "expo-video",
-        {
-          "supportsBackgroundPlayback": true,
-          "supportsPictureInPicture": true
-        }
-      ],
+      "expo-router",
+      "expo-video",
+      "expo-screen-orientation",
+      "expo-keep-awake",
       [
         "expo-build-properties",
         {
@@ -45,8 +42,7 @@
             "usesCleartextTraffic": true
           }
         }
-      ],
-      "expo-screen-orientation" 
+      ]
     ]
   }
 }
