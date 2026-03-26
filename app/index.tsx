@@ -16,16 +16,11 @@ export default function HomeScreen() {
   const [isButtonFocused, setIsButtonFocused] = useState(false);
   const router = useRouter();
 
-  // Gestore per i tasti fisici del telecomando (numeri 0-9)
   useSafeTVEventHandler((evt) => {
     if (!evt) return;
-    
-    // Se l'utente preme i tasti numerici fisici sul telecomando (se presenti)
     if (['0','1','2','3','4','5','6','7','8','9'].includes(evt.eventType)) {
       setId((prev) => prev + evt.eventType);
     }
-    
-    // Reset veloce tenendo premuto OK (opzionale)
     if (evt.eventType === 'longSelect') {
       setId('');
     }
@@ -40,46 +35,30 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>HLS TV PLAYER</Text>
-      
       <Text style={styles.label}>INSERISCI ID STREAM:</Text>
-      
       <TextInput
-        style={[
-          styles.input, 
-          isInputFocused && styles.inputFocused // Applica stile focus
-        ]}
+        style={[styles.input, isInputFocused && styles.inputFocused]}
         value={id}
         onChangeText={setId}
         placeholder="Es: 2"
         placeholderTextColor="#444"
         keyboardType="numeric"
-        
-        // --- CONFIGURAZIONE TV ---
-        focusable={true} 
-        hasTVPreferredFocus={true} // Il cursore parte da qui all'avvio
+        focusable={true}
+        hasTVPreferredFocus={true}
         onFocus={() => setIsInputFocused(true)}
         onBlur={() => setIsInputFocused(false)}
-        nextFocusDown={1} // ID del prossimo elemento (il tasto avvia)
+        nextFocusDown={1}
       />
-
-      <TouchableOpacity 
-        nativeID="1" // Collegato al nextFocusDown dell'input
-        style={[
-          styles.button, 
-          isButtonFocused && styles.buttonFocused // Applica stile focus
-        ]}
+      <TouchableOpacity
+        nativeID="1"
+        style={[styles.button, isButtonFocused && styles.buttonFocused]}
         onPress={handleStart}
         activeOpacity={0.8}
-        
-        // --- CONFIGURAZIONE TV ---
         focusable={true}
         onFocus={() => setIsButtonFocused(true)}
         onBlur={() => setIsButtonFocused(false)}
       >
-        <Text style={[
-          styles.buttonText,
-          isButtonFocused && { color: '#000' } // Testo nero su fondo chiaro quando focus
-        ]}>
+        <Text style={[styles.buttonText, isButtonFocused && { color: '#000' }]}>
           AVVIA STREAM
         </Text>
       </TouchableOpacity>
@@ -132,7 +111,7 @@ const styles = StyleSheet.create({
     marginBottom: 25,
   },
   inputFocused: {
-    borderColor: '#e8ff47', // Bordo giallo limone
+    borderColor: '#e8ff47',
     backgroundColor: '#1a1a1a',
     shadowColor: '#e8ff47',
     shadowOffset: { width: 0, height: 0 },
@@ -150,8 +129,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   buttonFocused: {
-    backgroundColor: '#e8ff47', // Diventa giallo pieno
-    transform: [{ scale: 1.05 }], // Si ingrandisce leggermente (effetto tipico TV)
+    backgroundColor: '#e8ff47',
+    transform: [{ scale: 1.05 }],
     borderColor: '#fff',
   },
   buttonText: {
@@ -169,5 +148,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'monospace',
     marginTop: 5,
-  }
+  },
 });
