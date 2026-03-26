@@ -1,9 +1,26 @@
-import { useCallback } from 'react';
-import { Platform, useTVEventHandler } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 
-type TVEventHandler = Parameters<typeof useTVEventHandler>[0];
+export function useSafeTVEventHandler(handler: (evt: any) => void) {
+  const handlerRef = useRef(handler);
+  handlerRef.current = handler;
 
-export function useSafeTVEventHandler(handler: TVEventHandler) {
-  const noop = useCallback(() => {}, []);
-  useTVEventHandler(Platform.isTV ? handler : noop);
+  useEffect(() => {
+    if (!Platform.isTV) return;
+
+    let TVEventHandler: any;
+    try {
+      TVEventHandler = require('react-native').TVEventHandler;
+    } catch (e) {
+      return;
+    }
+    if (!TVEventHandler) return;
+
+    const instance = new TVEventHandler();
+    instance.enable(null, (_cmp: any, evt: any) => {
+      if (evt) handlerRef.current(evt);
+    });
+
+    return () => instance.disable();
+  }, []);
 }
