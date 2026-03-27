@@ -23,7 +23,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const rootRef = useRef<View>(null);
 
-  // Gestisce i tasti numerici fisici del telecomando (se presenti)
   useSafeTVEventHandler(rootRef, (evt) => {
     if (!evt) return;
     if (['0','1','2','3','4','5','6','7','8','9'].includes(evt.eventType)) {
@@ -55,38 +54,40 @@ export default function HomeScreen() {
       <Text style={styles.title}>HLS TV PLAYER</Text>
       <Text style={styles.label}>INSERISCI ID STREAM</Text>
 
-      {/* Display ID — non focusabile, solo visualizzazione */}
       <View style={styles.display}>
         <Text style={styles.displayText}>{id || '—'}</Text>
       </View>
 
-      {/* Tastiera sempre visibile */}
       <View style={styles.keyboard}>
         {KEYS.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.keyRow}>
-            {row.map((key) => (
-              <TouchableOpacity
-                key={key}
-                style={[
-                  styles.key,
-                  key === '✓' && styles.keyConfirm,
-                  key === '⌫' && styles.keyDelete,
-                  focusedKey === `${rowIndex}-${key}` && styles.keyFocused,
-                ]}
-                focusable={true}
-                hasTVPreferredFocus={rowIndex === 0 && key === '1'}
-                onFocus={() => setFocusedKey(`${rowIndex}-${key}`)}
-                onBlur={() => setFocusedKey(null)}
-                onPress={() => handleKey(key)}
-              >
-                <Text style={[
-                  styles.keyText,
-                  focusedKey === `${rowIndex}-${key}` && styles.keyTextFocused,
-                ]}>
-                  {key}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {row.map((key) => {
+              const keyId = `${rowIndex}-${key}`;
+              const isFocused = focusedKey === keyId;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[
+                    styles.key,
+                    key === '✓' && styles.keyConfirm,
+                    key === '⌫' && styles.keyDelete,
+                    isFocused && styles.keyFocused,
+                  ]}
+                  focusable={true}
+                  hasTVPreferredFocus={rowIndex === 0 && key === '1'}
+                  onFocus={() => {
+                    setFocusedKey(keyId);
+                    setIsButtonFocused(false);
+                  }}
+                  onBlur={() => setFocusedKey(null)}
+                  onPress={() => handleKey(key)}
+                >
+                  <Text style={[styles.keyText, isFocused && styles.keyTextFocused]}>
+                    {key}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         ))}
       </View>
@@ -95,7 +96,7 @@ export default function HomeScreen() {
         style={[styles.button, isButtonFocused && styles.buttonFocused]}
         onPress={handleStart}
         focusable={true}
-        onFocus={() => setIsButtonFocused(true)}
+        onFocus={() => { setIsButtonFocused(true); setFocusedKey(null); }}
         onBlur={() => setIsButtonFocused(false)}
       >
         <Text style={[styles.buttonText, isButtonFocused && styles.buttonTextFocused]}>
@@ -174,7 +175,12 @@ const styles = StyleSheet.create({
   keyFocused: {
     backgroundColor: '#e8ff47',
     borderColor: '#fff',
-    transform: [{ scale: 1.1 }],
+    transform: [{ scale: 1.15 }],
+    shadowColor: '#e8ff47',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
+    elevation: 10,
   },
   keyConfirm: {
     backgroundColor: '#1a3a1a',
