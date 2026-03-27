@@ -21,6 +21,7 @@ const isTV = Platform.isTV;
 const WATCHDOG_INTERVAL_MS = 1000;
 const STALL_THRESHOLD_MS   = 3000;
 const RELOAD_COOLDOWN_MS   = 8000;
+const CONTROLS_TIMEOUT_MS  = 5000; // ← 5 secondi
 
 export default function PlayerScreen() {
   useKeepAwake();
@@ -32,6 +33,7 @@ export default function PlayerScreen() {
   const [sourceKey, setSourceKey] = useState(0);
 
   const rootRef = useRef<View>(null);
+  const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTimeRef = useRef<number>(0);
   const lastProgressRef = useRef<number>(Date.now());
   const stallCountRef = useRef<number>(0);
@@ -47,7 +49,6 @@ export default function PlayerScreen() {
     };
   }, []);
 
-  // Tasto INDIETRO hardware — sia BackHandler che TVEventHandler
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       router.back();
@@ -74,6 +75,14 @@ export default function PlayerScreen() {
     return () => statusSub.remove();
   }, [player]);
 
+  const triggerControls = () => {
+    setShowControls(true);
+    if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
+    controlsTimerRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, CONTROLS_TIMEOUT_MS);
+  };
+
   useSafeTVEventHandler(rootRef, (evt) => {
     if (!evt) return;
     if (['up', 'down', 'left', 'right', 'select'].includes(evt.eventType)) {
@@ -87,11 +96,6 @@ export default function PlayerScreen() {
       router.back();
     }
   });
-
-  const triggerControls = () => {
-    setShowControls(true);
-    setTimeout(() => setShowControls(false), 3500);
-  };
 
   const recover = useCallback(() => {
     stallCountRef.current++;
@@ -145,7 +149,9 @@ export default function PlayerScreen() {
         contentFit="contain"
         nativeControls={false}
       />
-      {(showControls || isTV) && (
+
+      {/* Pulsante Back — visibile solo per 5s dopo interazione */}
+      {showControls && (
         <TouchableOpacity
           focusable={true}
           hasTVPreferredFocus={false}
@@ -153,15 +159,17 @@ export default function PlayerScreen() {
           onPress={() => router.back()}
         >
           <Ionicons name="arrow-back" size={24} color="#e8ff47" />
-          <Text style={styles.backText}>TORNA ALLA LISTA</Text>
+          <Text style={styles.backText}>BACK</Text>
         </TouchableOpacity>
       )}
+
       {buffering && (
         <View style={styles.overlay}>
           <ActivityIndicator color="#e8ff47" size="large" />
           <Text style={styles.overlayText}>BUFFERING...</Text>
         </View>
       )}
+
       {showControls && (
         <View style={styles.hud}>
           <Text style={styles.hudText}>CANALE: {id}</Text>
