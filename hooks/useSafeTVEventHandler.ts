@@ -20,7 +20,8 @@ export function useSafeTVEventHandler(
     if (!TVEventHandler) return;
 
     const instance = new TVEventHandler();
-    instance.enable(componentRef.current, (_cmp: any, evt: any) => {
+    // null fallback se il ref non è ancora montato
+    instance.enable(componentRef?.current ?? null, (_cmp: any, evt: any) => {
       if (evt) handlerRef.current(evt);
     });
 
