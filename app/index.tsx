@@ -1,45 +1,30 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
   Text,
-  Pressable,
+  TextInput,
+  TouchableOpacity,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeTVEventHandler } from '../hooks/useSafeTVEventHandler';
-
-const KEYS = [
-  ['1', '2', '3'],
-  ['4', '5', '6'],
-  ['7', '8', '9'],
-  ['⌫', '0', '✓'],
-];
+import { useFocusEffect } from 'expo-router';
 
 export default function HomeScreen() {
   const [id, setId] = useState('');
   const router = useRouter();
-  const rootRef = useRef<View>(null);
+  const inputRef = useRef<TextInput>(null);
 
-  useSafeTVEventHandler(rootRef, (evt) => {
-    if (!evt) return;
-    if (['0','1','2','3','4','5','6','7','8','9'].includes(evt.eventType)) {
-      setId((prev) => prev + evt.eventType);
-    }
-    if (evt.eventType === 'longSelect') {
-      setId('');
-    }
-  });
-
-  const handleKey = (key: string) => {
-    if (key === '⌫') {
-      setId((prev) => prev.slice(0, -1));
-    } else if (key === '✓') {
-      handleStart();
-    } else {
-      setId((prev) => prev + key);
-    }
-  };
+  // Scatta ogni volta che questa schermata diventa attiva
+  // (sia al primo mount che quando si torna dalla schermata player)
+  useFocusEffect(
+    useCallback(() => {
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 100); // piccolo delay per dare tempo al layout di montarsi
+      return () => clearTimeout(timer);
+    }, [])
+  );
 
   const handleStart = () => {
     if (id.trim()) {
@@ -48,60 +33,38 @@ export default function HomeScreen() {
   };
 
   return (
-    <View ref={rootRef} style={styles.container}>
+    <View style={styles.container}>
       <Text style={styles.title}>HLS TV PLAYER</Text>
       <Text style={styles.label}>INSERISCI ID STREAM</Text>
 
-      <View style={styles.display}>
-        <Text style={styles.displayText}>{id || '—'}</Text>
-      </View>
-
-      <View style={styles.keyboard}>
-        {KEYS.map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.keyRow}>
-            {row.map((key) => (
-              <Pressable
-                key={key}
-                focusable={true}
-                hasTVPreferredFocus={rowIndex === 0 && key === '1'}
-                onPress={() => handleKey(key)}
-                style={({ focused }) => [
-                  styles.key,
-                  key === '✓' && styles.keyConfirm,
-                  key === '⌫' && styles.keyDelete,
-                  focused && styles.keyFocused,
-                ]}
-              >
-                {({ focused }) => (
-                  <Text style={[styles.keyText, focused && styles.keyTextFocused]}>
-                    {key}
-                  </Text>
-                )}
-              </Pressable>
-            ))}
-          </View>
-        ))}
-      </View>
-
-      <Pressable
+      <TextInput
+        ref={inputRef}
+        style={styles.input}
+        value={id}
+        onChangeText={setId}
+        placeholder="Es: 2"
+        placeholderTextColor="#444"
+        keyboardType="numeric"
+        returnKeyType="done"
+        onSubmitEditing={handleStart}
+        showSoftInputOnFocus={true}
+        blurOnSubmit={false}
         focusable={true}
+        hasTVPreferredFocus={true}
+      />
+
+      <TouchableOpacity
+        style={styles.button}
         onPress={handleStart}
-        style={({ focused }) => [
-          styles.button,
-          focused && styles.buttonFocused,
-        ]}
+        focusable={true}
       >
-        {({ focused }) => (
-          <Text style={[styles.buttonText, focused && styles.buttonTextFocused]}>
-            AVVIA STREAM
-          </Text>
-        )}
-      </Pressable>
+        <Text style={styles.buttonText}>AVVIA STREAM</Text>
+      </TouchableOpacity>
 
       {Platform.isTV && (
-        <View style={styles.tipContainer}>
-          <Text style={styles.tip}>Usa le frecce per navigare • OK per confermare</Text>
-        </View>
+        <Text style={styles.tip}>
+          Inserisci ID • premi AVVIA o Invio
+        </Text>
       )}
     </View>
   );
@@ -121,7 +84,7 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     fontWeight: 'bold',
     letterSpacing: 2,
-    marginBottom: 30,
+    marginBottom: 40,
   },
   label: {
     color: '#888',
@@ -130,95 +93,39 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 12,
   },
-  display: {
-    width: 260,
+  input: {
+    width: '50%',
+    maxWidth: 400,
     backgroundColor: '#111',
-    borderWidth: 2,
-    borderColor: '#333',
+    borderWidth: 3,
+    borderColor: '#e8ff47',
     borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  displayText: {
+    padding: 20,
     color: '#fff',
     fontSize: 32,
+    textAlign: 'center',
     fontFamily: 'monospace',
-    fontWeight: 'bold',
-    letterSpacing: 4,
-  },
-  keyboard: {
-    marginBottom: 24,
-  },
-  keyRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
-  },
-  key: {
-    width: 80,
-    height: 64,
-    backgroundColor: '#1e1e1e',
-    borderWidth: 2,
-    borderColor: '#333',
-    borderRadius: 10,
-    marginHorizontal: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  keyFocused: {
-    backgroundColor: '#e8ff47',
-    borderColor: '#ffffff',
-    transform: [{ scale: 1.15 }],
-    elevation: 12,
-  },
-  keyConfirm: {
-    backgroundColor: '#1a3a1a',
-    borderColor: '#2a5a2a',
-  },
-  keyDelete: {
-    backgroundColor: '#3a1a1a',
-    borderColor: '#5a2a2a',
-  },
-  keyText: {
-    color: '#fff',
-    fontSize: 24,
-    fontFamily: 'monospace',
-    fontWeight: 'bold',
-  },
-  keyTextFocused: {
-    color: '#000',
+    marginBottom: 30,
   },
   button: {
-    width: 260,
-    backgroundColor: '#1e1e1e',
+    width: '50%',
+    maxWidth: 400,
+    backgroundColor: '#e8ff47',
     paddingVertical: 20,
     borderRadius: 12,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  buttonFocused: {
-    backgroundColor: '#e8ff47',
-    borderColor: '#fff',
-    transform: [{ scale: 1.05 }],
   },
   buttonText: {
-    color: '#e8ff47',
+    color: '#000',
     fontWeight: 'bold',
     fontSize: 18,
     letterSpacing: 1,
-  },
-  buttonTextFocused: {
-    color: '#000',
-  },
-  tipContainer: {
-    marginTop: 30,
   },
   tip: {
     color: '#444',
     fontSize: 12,
     fontFamily: 'monospace',
+    marginTop: 30,
     textAlign: 'center',
   },
 });
