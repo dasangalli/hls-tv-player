@@ -3,10 +3,8 @@ import {
   StyleSheet,
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   Platform,
-  findNodeHandle,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeTVEventHandler } from '../hooks/useSafeTVEventHandler';
@@ -20,15 +18,12 @@ const KEYS = [
 
 export default function HomeScreen() {
   const [id, setId] = useState('');
-  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [isButtonFocused, setIsButtonFocused] = useState(false);
-  const [showKeyboard, setShowKeyboard] = useState(false);
   const router = useRouter();
-
   const rootRef = useRef<View>(null);
-  const inputRef = useRef<TextInput>(null);
-  const buttonRef = useRef<TouchableOpacity>(null);
 
+  // Gestisce i tasti numerici fisici del telecomando (se presenti)
   useSafeTVEventHandler(rootRef, (evt) => {
     if (!evt) return;
     if (['0','1','2','3','4','5','6','7','8','9'].includes(evt.eventType)) {
@@ -58,56 +53,52 @@ export default function HomeScreen() {
   return (
     <View ref={rootRef} style={styles.container}>
       <Text style={styles.title}>HLS TV PLAYER</Text>
-      <Text style={styles.label}>INSERISCI ID STREAM:</Text>
+      <Text style={styles.label}>INSERISCI ID STREAM</Text>
 
-      <TextInput
-        ref={inputRef}
-        style={[styles.input, isInputFocused && styles.inputFocused]}
-        value={id}
-        onChangeText={setId}
-        placeholder="Es: 2"
-        placeholderTextColor="#444"
-        keyboardType="numeric"
-        focusable={true}
-        hasTVPreferredFocus={true}
-        onFocus={() => { setIsInputFocused(true); setShowKeyboard(true); }}
-        onBlur={() => setIsInputFocused(false)}
-        nextFocusDown={findNodeHandle(buttonRef.current) ?? undefined}
-        showSoftInputOnFocus={false} // disabilita tastiera sistema, usiamo la nostra
-      />
+      {/* Display ID — non focusabile, solo visualizzazione */}
+      <View style={styles.display}>
+        <Text style={styles.displayText}>{id || '—'}</Text>
+      </View>
 
-      {/* Tastiera numerica custom */}
-      {showKeyboard && (
-        <View style={styles.keyboard}>
-          {KEYS.map((row, ri) => (
-            <View key={ri} style={styles.keyRow}>
-              {row.map((key) => (
-                <TouchableOpacity
-                  key={key}
-                  style={styles.key}
-                  focusable={true}
-                  onFocus={() => setIsInputFocused(false)}
-                  onPress={() => handleKey(key)}
-                >
-                  <Text style={styles.keyText}>{key}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ))}
-        </View>
-      )}
+      {/* Tastiera sempre visibile */}
+      <View style={styles.keyboard}>
+        {KEYS.map((row, rowIndex) => (
+          <View key={rowIndex} style={styles.keyRow}>
+            {row.map((key) => (
+              <TouchableOpacity
+                key={key}
+                style={[
+                  styles.key,
+                  key === '✓' && styles.keyConfirm,
+                  key === '⌫' && styles.keyDelete,
+                  focusedKey === `${rowIndex}-${key}` && styles.keyFocused,
+                ]}
+                focusable={true}
+                hasTVPreferredFocus={rowIndex === 0 && key === '1'}
+                onFocus={() => setFocusedKey(`${rowIndex}-${key}`)}
+                onBlur={() => setFocusedKey(null)}
+                onPress={() => handleKey(key)}
+              >
+                <Text style={[
+                  styles.keyText,
+                  focusedKey === `${rowIndex}-${key}` && styles.keyTextFocused,
+                ]}>
+                  {key}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ))}
+      </View>
 
       <TouchableOpacity
-        ref={buttonRef}
         style={[styles.button, isButtonFocused && styles.buttonFocused]}
         onPress={handleStart}
-        activeOpacity={0.8}
         focusable={true}
-        onFocus={() => { setIsButtonFocused(true); setShowKeyboard(false); }}
+        onFocus={() => setIsButtonFocused(true)}
         onBlur={() => setIsButtonFocused(false)}
-        nextFocusUp={findNodeHandle(inputRef.current) ?? undefined}
       >
-        <Text style={[styles.buttonText, isButtonFocused && { color: '#000' }]}>
+        <Text style={[styles.buttonText, isButtonFocused && styles.buttonTextFocused]}>
           AVVIA STREAM
         </Text>
       </TouchableOpacity>
@@ -115,7 +106,6 @@ export default function HomeScreen() {
       {Platform.isTV && (
         <View style={styles.tipContainer}>
           <Text style={styles.tip}>Usa le frecce per navigare • OK per confermare</Text>
-          <Text style={styles.tip}>Puoi anche usare i tasti numerici del telecomando</Text>
         </View>
       )}
     </View>
@@ -134,50 +124,45 @@ const styles = StyleSheet.create({
     color: '#e8ff47',
     fontSize: 42,
     fontFamily: 'monospace',
-    marginBottom: 50,
     fontWeight: 'bold',
     letterSpacing: 2,
+    marginBottom: 30,
   },
   label: {
     color: '#888',
     fontFamily: 'monospace',
-    marginBottom: 15,
     fontSize: 14,
     textTransform: 'uppercase',
+    marginBottom: 12,
   },
-  input: {
-    width: '60%',
-    maxWidth: 500,
+  display: {
+    width: 260,
     backgroundColor: '#111',
     borderWidth: 2,
-    borderColor: '#222',
+    borderColor: '#333',
     borderRadius: 12,
-    padding: 20,
-    color: '#fff',
-    fontSize: 28,
-    textAlign: 'center',
-    fontFamily: 'monospace',
-    marginBottom: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    marginBottom: 24,
   },
-  inputFocused: {
-    borderColor: '#e8ff47',
-    backgroundColor: '#1a1a1a',
-    shadowColor: '#e8ff47',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
+  displayText: {
+    color: '#fff',
+    fontSize: 32,
+    fontFamily: 'monospace',
+    fontWeight: 'bold',
+    letterSpacing: 4,
   },
   keyboard: {
-    marginBottom: 20,
-    alignItems: 'center',
+    marginBottom: 24,
   },
   keyRow: {
     flexDirection: 'row',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   key: {
     width: 80,
-    height: 60,
+    height: 64,
     backgroundColor: '#1e1e1e',
     borderWidth: 2,
     borderColor: '#333',
@@ -186,27 +171,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  keyFocused: {
+    backgroundColor: '#e8ff47',
+    borderColor: '#fff',
+    transform: [{ scale: 1.1 }],
+  },
+  keyConfirm: {
+    backgroundColor: '#1a3a1a',
+    borderColor: '#2a5a2a',
+  },
+  keyDelete: {
+    backgroundColor: '#3a1a1a',
+    borderColor: '#5a2a2a',
+  },
   keyText: {
     color: '#fff',
-    fontSize: 22,
+    fontSize: 24,
     fontFamily: 'monospace',
     fontWeight: 'bold',
   },
+  keyTextFocused: {
+    color: '#000',
+  },
   button: {
-    width: '60%',
-    maxWidth: 500,
+    width: 260,
     backgroundColor: '#1e1e1e',
-    padding: 20,
+    paddingVertical: 20,
     borderRadius: 12,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
-    marginTop: 8,
   },
   buttonFocused: {
     backgroundColor: '#e8ff47',
-    transform: [{ scale: 1.05 }],
     borderColor: '#fff',
+    transform: [{ scale: 1.05 }],
   },
   buttonText: {
     color: '#e8ff47',
@@ -214,14 +213,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
     letterSpacing: 1,
   },
+  buttonTextFocused: {
+    color: '#000',
+  },
   tipContainer: {
-    marginTop: 40,
-    alignItems: 'center',
+    marginTop: 30,
   },
   tip: {
     color: '#444',
     fontSize: 12,
     fontFamily: 'monospace',
-    marginTop: 5,
+    textAlign: 'center',
   },
 });
