@@ -3,6 +3,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Platform,
   StyleSheet,
   Text,
@@ -30,22 +31,30 @@ export default function PlayerScreen() {
   const [showControls, setShowControls] = useState(false);
   const [sourceKey, setSourceKey] = useState(0);
 
+  const rootRef = useRef<View>(null);
   const lastTimeRef = useRef<number>(0);
   const lastProgressRef = useRef<number>(Date.now());
   const stallCountRef = useRef<number>(0);
   const lastReloadRef = useRef<number>(0);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Orientamento
   useEffect(() => {
-    async function initOrientation() {
-      if (!isTV) {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-      }
+    if (!isTV) {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     }
-    initOrientation();
     return () => {
       if (!isTV) ScreenOrientation.unlockAsync();
     };
+  }, []);
+
+  // Tasto INDIETRO hardware Android (compresi telecomandi TV)
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      router.back();
+      return true; // true = evento consumato, non chiude l'app
+    });
+    return () => sub.remove();
   }, []);
 
   const player = useVideoPlayer({
@@ -67,12 +76,13 @@ export default function PlayerScreen() {
     return () => statusSub.remove();
   }, [player]);
 
-  useSafeTVEventHandler((evt) => {
+  // Tasto INDIETRO via TVEventHandler (doppia sicurezza)
+  useSafeTVEventHandler(rootRef, (evt) => {
     if (!evt) return;
     if (['up', 'down', 'left', 'right', 'select'].includes(evt.eventType)) {
       triggerControls();
     }
-    if (evt.eventType === 'playPause' || (evt.eventType === 'select' && !showControls)) {
+    if (evt.eventType === 'playPause') {
       if (player.playing) player.pause();
       else player.play();
     }
@@ -130,7 +140,7 @@ export default function PlayerScreen() {
   }, [sourceKey]);
 
   return (
-    <View style={styles.container}>
+    <View ref={rootRef} style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       <VideoView
         player={player}
