@@ -38,7 +38,6 @@ export default function PlayerScreen() {
   const lastReloadRef = useRef<number>(0);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Orientamento
   useEffect(() => {
     if (!isTV) {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
@@ -48,11 +47,11 @@ export default function PlayerScreen() {
     };
   }, []);
 
-  // Tasto INDIETRO hardware Android (compresi telecomandi TV)
+  // Tasto INDIETRO hardware — sia BackHandler che TVEventHandler
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       router.back();
-      return true; // true = evento consumato, non chiude l'app
+      return true;
     });
     return () => sub.remove();
   }, []);
@@ -69,14 +68,12 @@ export default function PlayerScreen() {
   useEffect(() => {
     const statusSub = player.addListener('statusChange', (status) => {
       if (status.status === 'error') {
-        console.warn('Errore player nativo, forzo ricaricamento...');
         setSourceKey(k => k + 1);
       }
     });
     return () => statusSub.remove();
   }, [player]);
 
-  // Tasto INDIETRO via TVEventHandler (doppia sicurezza)
   useSafeTVEventHandler(rootRef, (evt) => {
     if (!evt) return;
     if (['up', 'down', 'left', 'right', 'select'].includes(evt.eventType)) {
