@@ -1,7 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 
-export function useSafeTVEventHandler(handler: (evt: any) => void) {
+export function useSafeTVEventHandler(
+  componentRef: React.RefObject<any>,
+  handler: (evt: any) => void
+) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 
@@ -17,7 +20,7 @@ export function useSafeTVEventHandler(handler: (evt: any) => void) {
     if (!TVEventHandler) return;
 
     const instance = new TVEventHandler();
-    instance.enable(null, (_cmp: any, evt: any) => {
+    instance.enable(componentRef.current, (_cmp: any, evt: any) => {
       if (evt) handlerRef.current(evt);
     });
 
