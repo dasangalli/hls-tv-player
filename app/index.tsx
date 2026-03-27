@@ -3,7 +3,7 @@ import {
   StyleSheet,
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -18,8 +18,6 @@ const KEYS = [
 
 export default function HomeScreen() {
   const [id, setId] = useState('');
-  const [focusedKey, setFocusedKey] = useState<string | null>(null);
-  const [isButtonFocused, setIsButtonFocused] = useState(false);
   const router = useRouter();
   const rootRef = useRef<View>(null);
 
@@ -61,48 +59,44 @@ export default function HomeScreen() {
       <View style={styles.keyboard}>
         {KEYS.map((row, rowIndex) => (
           <View key={rowIndex} style={styles.keyRow}>
-            {row.map((key) => {
-              const keyId = `${rowIndex}-${key}`;
-              const isFocused = focusedKey === keyId;
-              return (
-                <TouchableOpacity
-                  key={key}
-                  style={[
-                    styles.key,
-                    key === '✓' && styles.keyConfirm,
-                    key === '⌫' && styles.keyDelete,
-                    isFocused && styles.keyFocused,
-                  ]}
-                  focusable={true}
-                  hasTVPreferredFocus={rowIndex === 0 && key === '1'}
-                  onFocus={() => {
-                    setFocusedKey(keyId);
-                    setIsButtonFocused(false);
-                  }}
-                  onBlur={() => setFocusedKey(null)}
-                  onPress={() => handleKey(key)}
-                >
-                  <Text style={[styles.keyText, isFocused && styles.keyTextFocused]}>
+            {row.map((key) => (
+              <Pressable
+                key={key}
+                focusable={true}
+                hasTVPreferredFocus={rowIndex === 0 && key === '1'}
+                onPress={() => handleKey(key)}
+                style={({ focused }) => [
+                  styles.key,
+                  key === '✓' && styles.keyConfirm,
+                  key === '⌫' && styles.keyDelete,
+                  focused && styles.keyFocused,
+                ]}
+              >
+                {({ focused }) => (
+                  <Text style={[styles.keyText, focused && styles.keyTextFocused]}>
                     {key}
                   </Text>
-                </TouchableOpacity>
-              );
-            })}
+                )}
+              </Pressable>
+            ))}
           </View>
         ))}
       </View>
 
-      <TouchableOpacity
-        style={[styles.button, isButtonFocused && styles.buttonFocused]}
-        onPress={handleStart}
+      <Pressable
         focusable={true}
-        onFocus={() => { setIsButtonFocused(true); setFocusedKey(null); }}
-        onBlur={() => setIsButtonFocused(false)}
+        onPress={handleStart}
+        style={({ focused }) => [
+          styles.button,
+          focused && styles.buttonFocused,
+        ]}
       >
-        <Text style={[styles.buttonText, isButtonFocused && styles.buttonTextFocused]}>
-          AVVIA STREAM
-        </Text>
-      </TouchableOpacity>
+        {({ focused }) => (
+          <Text style={[styles.buttonText, focused && styles.buttonTextFocused]}>
+            AVVIA STREAM
+          </Text>
+        )}
+      </Pressable>
 
       {Platform.isTV && (
         <View style={styles.tipContainer}>
@@ -174,13 +168,9 @@ const styles = StyleSheet.create({
   },
   keyFocused: {
     backgroundColor: '#e8ff47',
-    borderColor: '#fff',
+    borderColor: '#ffffff',
     transform: [{ scale: 1.15 }],
-    shadowColor: '#e8ff47',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 12,
-    elevation: 10,
+    elevation: 12,
   },
   keyConfirm: {
     backgroundColor: '#1a3a1a',
