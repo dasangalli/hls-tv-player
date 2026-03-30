@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams, Stack } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -18,10 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 const BASE_URL = 'http://129.153.47.200:8000';
 const isTV = Platform.isTV;
 
-const WATCHDOG_INTERVAL_MS = 1000;
-const STALL_THRESHOLD_MS   = 3000;
-const RELOAD_COOLDOWN_MS   = 8000;
-const CONTROLS_TIMEOUT_MS  = 5000; // ← 5 secondi
+const WATCHDOG_INTERVAL_MS = 2000;   // era 1000 — meno overhead
+const STALL_THRESHOLD_MS   = 8000;   // era 3000 — evita falsi positivi su micro-buffering
+const RELOAD_COOLDOWN_MS   = 15000;  // era 8000 — dai tempo al player di recuperare
+const CONTROLS_TIMEOUT_MS  = 5000;
 
 export default function PlayerScreen() {
   useKeepAwake();
@@ -34,11 +34,15 @@ export default function PlayerScreen() {
 
   const rootRef = useRef<View>(null);
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTimeRef = useRef<number>(0);
-  const lastProgressRef = useRef<number>(Date.now());
-  const stallCountRef = useRef<number>(0);
-  const lastReloadRef = useRef<number>(0);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Tutti i valori del watchdog come ref — nessuna dipendenza da state
+  const lastTimeRef      = useRef<number>(0);
+  const lastProgressRef  = useRef<number>(Date.now());
+  const stallCountRef    = useRef<number>(0);
+  const lastReloadRef    = useRef<number>(0);   // cooldown reload
+  const bufferingRef     = useRef<boolean>(true);
+  const sourceKeyRef     = useRef<number>(0);
 
   useEffect(() => {
     if (!isTV) {
@@ -69,7 +73,12 @@ export default function PlayerScreen() {
   useEffect(() => {
     const statusSub = player.addListener('statusChange', (status) => {
       if (status.status === 'error') {
-        setSourceKey(k => k + 1);
+        const now = Date.now();
+        if (now - lastReloadRef.current > RELOAD_COOLDOWN_MS) {
+          lastReloadRef.current = now;
+          sourceKeyRef.current += 1;
+          setSourceKey(sourceKeyRef.current);
+        }
       }
     });
     return () => statusSub.remove();
@@ -78,9 +87,7 @@ export default function PlayerScreen() {
   const triggerControls = () => {
     setShowControls(true);
     if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
-    controlsTimerRef.current = setTimeout(() => {
-      setShowControls(false);
-    }, CONTROLS_TIMEOUT_MS);
+    controlsTimerRef.current = setTimeout(() => setShowControls(false), CONTROLS_TIMEOUT_MS);
   };
 
   useSafeTVEventHandler(rootRef, (evt) => {
@@ -97,40 +104,55 @@ export default function PlayerScreen() {
     }
   });
 
-  const recover = useCallback(() => {
-    stallCountRef.current++;
-    const count = stallCountRef.current;
-    if (count <= 2) {
-      try { player.seekBy(10); } catch (e) {}
-      return;
-    }
-    const now = Date.now();
-    if (now - lastReloadRef.current > RELOAD_COOLDOWN_MS) {
-      lastReloadRef.current = now;
-      setSourceKey(k => k + 1);
-      stallCountRef.current = 0;
-    }
-  }, [player]);
-
+  // Watchdog con dipendenze vuote — creato una volta sola, non si ricrea mai
   useEffect(() => {
     watchdogRef.current = setInterval(() => {
       if (!player || !player.playing) return;
-      if (player.currentTime !== lastTimeRef.current) {
-        lastTimeRef.current = player.currentTime;
-        lastProgressRef.current = Date.now();
-        if (buffering) setBuffering(false);
-      } else {
-        const elapsed = Date.now() - lastProgressRef.current;
-        if (elapsed > STALL_THRESHOLD_MS) {
-          setBuffering(true);
-          recover();
+
+      const currentTime = player.currentTime;
+      const now = Date.now();
+
+      if (currentTime !== lastTimeRef.current) {
+        // Il video sta avanzando — reset completo
+        lastTimeRef.current     = currentTime;
+        lastProgressRef.current = now;
+        stallCountRef.current   = 0;  // reset solo qui, quando avanza davvero
+        if (bufferingRef.current) {
+          bufferingRef.current = false;
+          setBuffering(false);
         }
+        return;
       }
+
+      // Il video non avanza
+      const elapsed = now - lastProgressRef.current;
+      if (elapsed > STALL_THRESHOLD_MS) {
+        if (!bufferingRef.current) {
+          bufferingRef.current = true;
+          setBuffering(true);
+        }
+
+        // Cooldown hard: nessun intervento prima di RELOAD_COOLDOWN_MS
+        if (now - lastReloadRef.current < RELOAD_COOLDOWN_MS) return;
+
+        stallCountRef.current++;
+        lastReloadRef.current   = now;
+        lastProgressRef.current = now; // evita reload a cascata immediati
+
+        console.warn('[Watchdog] STALL', stallCountRef.current, '— reload stream');
+
+        // Su live non seekiamo mai — ricarichiamo direttamente
+        sourceKeyRef.current += 1;
+        setSourceKey(sourceKeyRef.current);
+        stallCountRef.current = 0;
+      }
+
     }, WATCHDOG_INTERVAL_MS);
+
     return () => {
       if (watchdogRef.current) clearInterval(watchdogRef.current);
     };
-  }, [player, recover, buffering]);
+  }, []); // ← dipendenze vuote: una sola istanza per tutta la vita del componente
 
   useEffect(() => {
     player.replace({
@@ -138,6 +160,8 @@ export default function PlayerScreen() {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' }
     });
     player.play();
+    lastProgressRef.current = Date.now(); // reset timer dopo ogni reload
+    lastTimeRef.current     = 0;
   }, [sourceKey]);
 
   return (
@@ -150,7 +174,6 @@ export default function PlayerScreen() {
         nativeControls={false}
       />
 
-      {/* Pulsante Back — visibile solo per 5s dopo interazione */}
       {showControls && (
         <TouchableOpacity
           focusable={true}
