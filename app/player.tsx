@@ -23,9 +23,9 @@ const BASE_URL = 'http://129.153.47.200:8000';
 const { width } = Dimensions.get('window');
 const isTV = Platform.isTV || (width >= 1280 && !('ontouchstart' in global));
 
-const WATCHDOG_INTERVAL_MS = 2000;  // Controlla ogni 2 secondi
-const STALL_THRESHOLD_MS   = 8000;  // Se fermo per 8s, considera bloccato
-const RELOAD_COOLDOWN_MS   = 15000; // Minimo 15s tra un refresh e l'altro
+const WATCHDOG_INTERVAL_MS = 1000;  // Controlla lo stato ogni secondo
+const STALL_THRESHOLD_MS   = 6000;  // Se il video è fermo per 6s, forza il refresh
+const RELOAD_COOLDOWN_MS   = 12000; // Impedisce refresh a raffica (minimo 12s tra reload)
 const RETRY_DELAYS         = [5000, 10000, 20000, 30000];
 const CONTROLS_HIDE_DELAY  = 3000;
 
@@ -35,7 +35,7 @@ export default function PlayerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const playlistUrl = `${BASE_URL}/live/${id}/playlist.m3u8`;
 
-  // Stati UI
+  // Stati per la UI
   const [buffering, setBuffering]       = useState(true);
   const [error, setError]               = useState(false);
   const [retryCount, setRetryCount]     = useState(0);
@@ -43,7 +43,7 @@ export default function PlayerScreen() {
   const [sourceKey, setSourceKey]       = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Riferimenti per la logica (evitano re-render inutili e chiusure di scope)
+  // Riferimenti per la logica (persistenti tra i render)
   const lastTimeRef      = useRef<number>(0);
   const lastProgressRef  = useRef<number>(Date.now());
   const lastReloadRef    = useRef<number>(0);
@@ -64,7 +64,7 @@ export default function PlayerScreen() {
   });
 
   // -------------------------------------------------------------------------
-  // 2. Gestione Orientamento e Back Button
+  // 2. Orientamento e Tasto Back Hardware
   // -------------------------------------------------------------------------
   useEffect(() => {
     if (!isTV) ScreenOrientation.unlockAsync();
@@ -91,20 +91,18 @@ export default function PlayerScreen() {
   useEffect(() => {
     const statusSub = player.addListener('statusChange', (status) => {
       if (status.status === 'readyToPlay') {
-        console.log('[Player] Ready to play');
         bufferingRef.current = false;
         errorRef.current     = false;
         setBuffering(false);
         setError(false);
         lastProgressRef.current = Date.now();
-        retryCountRef.current = 0; // Reset retry al successo
+        retryCountRef.current = 0; 
       }
       if (status.status === 'loading') {
         bufferingRef.current = true;
         setBuffering(true);
       }
       if (status.status === 'error') {
-        console.error('[Player] Error status:', status.error);
         errorRef.current = true;
         setError(true);
         setBuffering(false);
@@ -116,24 +114,10 @@ export default function PlayerScreen() {
   }, [player]);
 
   // -------------------------------------------------------------------------
-  // 4. Logica di Retry (per errori fatali)
+  // 4. Logica di Reload e Retry
   // -------------------------------------------------------------------------
-  const scheduleRetry = () => {
-    if (retryRef.current) clearTimeout(retryRef.current);
-    
-    const count = retryCountRef.current;
-    const delay = RETRY_DELAYS[Math.min(count, RETRY_DELAYS.length - 1)];
-    retryCountRef.current += 1;
-    setRetryCount(retryCountRef.current);
-
-    console.log(`[Retry] Tentativo ${retryCountRef.current} tra ${delay}ms`);
-
-    retryRef.current = setTimeout(() => {
-      forceReload();
-    }, delay);
-  };
-
   const forceReload = () => {
+    console.log('[Player] Eseguo Force Reload...');
     errorRef.current     = false;
     bufferingRef.current = true;
     setError(false);
@@ -144,25 +128,34 @@ export default function PlayerScreen() {
     setSourceKey(sourceKeyRef.current);
   };
 
-  // Trigger fisico del reload quando cambia sourceKey
+  const scheduleRetry = () => {
+    if (retryRef.current) clearTimeout(retryRef.current);
+    const count = retryCountRef.current;
+    const delay = RETRY_DELAYS[Math.min(count, RETRY_DELAYS.length - 1)];
+    retryCountRef.current += 1;
+    setRetryCount(retryCountRef.current);
+
+    retryRef.current = setTimeout(() => forceReload(), delay);
+  };
+
+  // Effetto che scatta al cambio della sourceKey (refresh fisico)
   useEffect(() => {
-    console.log('[Player] Eseguo replace della sorgente (sourceKey:', sourceKey, ')');
     player.replace({ uri: playlistUrl });
     player.play();
   }, [sourceKey]);
 
   // -------------------------------------------------------------------------
-  // 5. Watchdog Avanzato (Rilevamento Stalli)
+  // 5. Watchdog (Rilevamento Blocchi - 6 Secondi)
   // -------------------------------------------------------------------------
   useEffect(() => {
     watchdogRef.current = setInterval(() => {
-      // Se c'è già un errore con retry schedulato, o se il player è in pausa manuale, non fare nulla
+      // Non intervenire se il player non esiste, se c'è già un errore o se è in pausa
       if (!player || errorRef.current || player.paused) return;
 
       const currentTime = player.currentTime;
       const now         = Date.now();
 
-      // Caso A: Il video sta scorrendo normalmente
+      // Caso 1: Il video scorre
       if (currentTime !== lastTimeRef.current) {
         lastTimeRef.current     = currentTime;
         lastProgressRef.current = now;
@@ -173,14 +166,14 @@ export default function PlayerScreen() {
         return;
       }
 
-      // Caso B: Il video è fermo (currentTime non cambia)
+      // Caso 2: Il video è fermo (currentTime identico al precedente)
       const elapsedSinceProgress = now - lastProgressRef.current;
 
       if (elapsedSinceProgress > STALL_THRESHOLD_MS) {
-        // Verifica se siamo nel periodo di cooldown per non refreshare a raffica
+        // Verifica cooldown per evitare refresh infiniti
         if (now - lastReloadRef.current < RELOAD_COOLDOWN_MS) return;
 
-        console.warn('[Watchdog] Stall rilevato (>8s). Forzo refresh...');
+        console.warn(`[Watchdog] Blocco di ${elapsedSinceProgress}ms. Forzo ripristino.`);
         lastReloadRef.current = now;
         forceReload();
       }
@@ -194,15 +187,13 @@ export default function PlayerScreen() {
   }, [player]);
 
   // -------------------------------------------------------------------------
-  // 6. UI & Controlli
+  // 6. UI & Gestione Tap
   // -------------------------------------------------------------------------
   function handleTap() {
     setShowControls(true);
     if (controlsTimerRef.current) clearTimeout(controlsTimerRef.current);
     controlsTimerRef.current = setTimeout(() => setShowControls(false), CONTROLS_HIDE_DELAY);
   }
-
-  const controlsVisible = showControls;
 
   return (
     <TouchableWithoutFeedback onPress={handleTap}>
@@ -215,18 +206,17 @@ export default function PlayerScreen() {
           contentFit={isFullscreen ? 'cover' : 'contain'}
           nativeControls={false}
           allowsFullscreen={false}
-          allowsPictureInPicture={false}
         />
 
-        {/* Overlay Controlli */}
-        {controlsVisible && (
+        {/* Overlay Controlli (Back e Fullscreen) */}
+        {showControls && (
           <>
             <TouchableOpacity
               style={styles.backButton}
               onPress={() => isFullscreen ? setIsFullscreen(false) : router.back()}
             >
               <Ionicons name="arrow-back" size={24} color="#e8ff47" />
-              <Text style={styles.backText}>BACK</Text>
+              <Text style={styles.backText}>INDIETRO</Text>
             </TouchableOpacity>
 
             {!isFullscreen && (
@@ -239,29 +229,28 @@ export default function PlayerScreen() {
                 </TouchableOpacity>
 
                 <View style={styles.hud}>
-                  <Text style={styles.hudText}>{id}</Text>
+                  <Text style={styles.hudText}>CANALE: {id}</Text>
                 </View>
               </>
             )}
           </>
         )}
 
-        {/* Stato Caricamento */}
+        {/* Overlay Caricamento / Stallo */}
         {buffering && !error && (
           <View style={styles.overlay}>
             <ActivityIndicator color="#e8ff47" size="large" />
-            <Text style={styles.overlayText}>ripristino connessione…</Text>
+            <Text style={styles.overlayText}>ripristino segnale…</Text>
           </View>
         )}
 
-        {/* Stato Errore */}
+        {/* Overlay Errore Fatale */}
         {error && (
           <View style={styles.overlay}>
             <Text style={styles.overlayTextError}>✕</Text>
             <Text style={styles.overlayText}>
-              problema di ricezione — retry {retryCount}…
+              segnale assente — ricollegamento {retryCount}…
             </Text>
-            <Text style={styles.overlayUrl}>{playlistUrl}</Text>
           </View>
         )}
       </View>
@@ -302,7 +291,6 @@ const styles = StyleSheet.create({
   },
   overlayText:      { color: '#888', fontFamily: 'monospace', fontSize: 13 },
   overlayTextError: { color: '#ff3b3b', fontSize: 32 },
-  overlayUrl:        { color: '#2a2a2a', fontFamily: 'monospace', fontSize: 10, marginTop: 8 },
   hud:              { position: 'absolute', bottom: 16, left: 20, opacity: 0.4 },
   hudText:          { color: '#c8c8c8', fontFamily: 'monospace', fontSize: 11 },
 });
