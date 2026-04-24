@@ -11,10 +11,6 @@
         "projectId": "2f4cad33-cee4-46c9-81c6-304a001b695a"
       }
     },
-    "ios": {
-      "bundleIdentifier": "com.hlsplayer.app",
-      "supportsTablet": true
-    },
     "android": {
       "package": "com.hlsplayer.app",
       "versionCode": 1,
