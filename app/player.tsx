@@ -24,8 +24,8 @@ const { width } = Dimensions.get('window');
 const isTV = Platform.isTV || (width >= 1280 && !('ontouchstart' in global));
 
 const WATCHDOG_INTERVAL_MS = 1000;  // Controlla lo stato ogni secondo
-const STALL_THRESHOLD_MS   = 6000;  // Se il video è fermo per 6s, forza il refresh
-const RELOAD_COOLDOWN_MS   = 12000; // Impedisce refresh a raffica (minimo 12s tra reload)
+const STALL_THRESHOLD_MS   = 12000; // raised to 12s
+const RELOAD_COOLDOWN_MS   = 20000; // Impedisce refresh a raffica (minimo 20s tra reload)
 const RETRY_DELAYS         = [5000, 10000, 20000, 30000];
 const CONTROLS_HIDE_DELAY  = 3000;
 
